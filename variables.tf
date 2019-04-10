@@ -1,7 +1,7 @@
 variable "aliases" {
-    type = "string"
+  type = "string"
 }
 
 variable "parent_zone_name" {
-    type = "string"
+  type = "string"
 }
