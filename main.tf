@@ -1,28 +1,67 @@
-resource "aws_route53_zone" "primary" {
-  name          = "davidjeddy.me"
+# Using this module
+module "main" {
+  source = "github.com/riboseinc/terraform-aws-s3-cloudfront-website"
+
+  fqdn = "${var.fqdn}"
+  ssl_certificate_arn = "${aws_acm_certificate_validation.cert.certificate_arn}"
+  allowed_ips = "${var.allowed_ips}"
+
+  index_document = "index.html"
+  error_document = "404.html"
+
+  refer_secret = "${base64sha512("REFER-SECRET-19265125-${var.fqdn}-52865926")}"
+
   force_destroy = "true"
+
+  providers {
+    "aws.main" = "aws.main"
+    "aws.cloudfront" = "aws.cloudfront"
+  }
+
+  # Optional WAF Web ACL ID, defaults to none.
+  web_acl_id = "${data.terraform_remote_state.site.waf-web-acl-id}"
 }
 
-module "cdn" {
-  source    = "git::https://github.com/cloudposse/terraform-aws-cloudfront-s3-cdn.git?ref=master"
-  namespace = "dje"
-  stage     = "tst"
-  name      = "cdn"
-  aliases                  = ["tst.davidjeddy.me"]
-  parent_zone_id           = "${aws_route53_zone.primary.zone_id}"
-  use_regional_s3_endpoint = "true"
-  origin_force_destroy     = "true"
-  cors_allowed_headers     = ["*"]
-  cors_allowed_methods     = ["GET", "HEAD", "PUT"]
-  cors_allowed_origins     = ["*.davidjeddy.me"]
-  cors_expose_headers      = ["ETag"]
+# ACM Certificate generation
+
+resource "aws_acm_certificate" "cert" {
+  provider          = "aws.cloudfront"
+  domain_name       = "${var.fqdn}"
+  validation_method = "DNS"
 }
 
-resource "aws_s3_bucket_object" "index" {
-  bucket       = "${module.cdn.s3_bucket}"
-  key          = "index.html"
-  source       = "${path.module}/index.html"
-  content_type = "text/html"
-  etag         = "${md5(file("${path.module}/index.html"))}"
+resource "aws_route53_record" "cert_validation" {
+  provider = "aws.cloudfront"
+  name     = "${aws_acm_certificate.cert.domain_validation_options.0.resource_record_name}"
+  type     = "${aws_acm_certificate.cert.domain_validation_options.0.resource_record_type}"
+  zone_id  = "${data.aws_route53_zone.main.id}"
+  records  = ["${aws_acm_certificate.cert.domain_validation_options.0.resource_record_value}"]
+  ttl      = 60
 }
 
+resource "aws_acm_certificate_validation" "cert" {
+  provider                = "aws.cloudfront"
+  certificate_arn         = "${aws_acm_certificate.cert.arn}"
+  validation_record_fqdns = ["${aws_route53_record.cert_validation.fqdn}"]
+}
+
+# Route 53 record for the static site
+
+data "aws_route53_zone" "main" {
+  provider     = "aws.main"
+  name         = "${var.domain}"
+  private_zone = false
+}
+
+resource "aws_route53_record" "web" {
+  provider = "aws.main"
+  zone_id  = "${data.aws_route53_zone.main.zone_id}"
+  name     = "${var.fqdn}"
+  type     = "A"
+
+  alias {
+    name    = "${module.main.cf_domain_name}"
+    zone_id = "${module.main.cf_hosted_zone_id}"
+    evaluate_target_health = false
+  }
+}

@@ -1,7 +1,7 @@
 #!/bin/bash +xe
-# terraform init
+terraform init
 terraform plan --out ./out.plan \
-    -var 'aliases=${ALIASES}' \
-    -var 'parent_zone_name=${PARENT_ZONE_NAME}'
+    -var 'fqdn=${FQDN}' \
+    -var 'domain=${DOMAIN}'
 #terraform apply ./out.plan
 
