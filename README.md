@@ -1,3 +1,5 @@
+**WIP. Not currently functional.**
+
 AWS CloudFront to Supercharge Your Static Website
 
 
